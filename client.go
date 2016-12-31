@@ -8,6 +8,8 @@ import (
 	"os"
 	"log"
 	"encoding/json"
+	"strconv"
+	"time"
 )
 
 var FACE = [7]string{"list","join","create","logout", "leave", "help", "message"} //client api
@@ -78,13 +80,12 @@ func login(username string) {
 			}
 
 			content := strings.Fields(msgClean) //TODO: work on double word room names or double anything
-			//TODO: fix the error from failed array access
 			switch content[0] {
-				case "create": createRoom(content[1])
+				case "create": createRoom(content)
 				case "list": listRooms()
-				case "join": joinRoom(content[1])
-				case "leave": leaveRoom(content[1])
-				case "message": messageRoom(content[1], content[2])
+				case "join": joinRoom(content)
+				case "leave": leaveRoom(content)
+				case "message": messageRoom(content)
 				case "logout": logout()
 				case "help": helpmenu()
 				default: fmt.Println("Unknown request")
@@ -97,7 +98,21 @@ func login(username string) {
 	}
 }
 
-func createRoom(roomname string) {
+func createRoom(msg []string) {
+
+	if len(msg) <= 1 {
+		fmt.Println("Can't create a room with no name")
+		fmt.Print(">>> ")
+		return
+	}
+
+	if len(msg) > 2 {
+		fmt.Println("Chatroom name must be without space")
+		fmt.Print(">>> ")
+		return
+	}
+
+	roomname := msg[1]
 	url := "http://localhost:3000/chatrooms"
 	entry := "roomname="+roomname
 
@@ -146,8 +161,56 @@ func listRooms() {
 	fmt.Print(">>> ")
 }
 
-func joinRoom(roomname string) {
 
+func refresh(roomname string) {
+	index := 0
+	for {
+
+		url := "http://localhost:3000/users/"+user+"/"+roomname+"/messages?index="+strconv.Itoa(index)
+		req, _ := http.NewRequest("GET", url, nil)
+		
+		res, _ := http.DefaultClient.Do(req)
+
+		defer res.Body.Close()
+		body := Result{}
+
+		dec := json.NewDecoder(res.Body)
+		err := dec.Decode(&body)
+		if err != nil {
+			log.Println(err)
+			break
+		}
+		if body.Status == "failed" {
+			break
+		}
+
+		for i:=0; i<len(body.Body); i++ {
+			fmt.Println(body.Body[i])	
+			fmt.Print(">>> ")
+		}
+		if len(body.Body) > 0 {
+			fmt.Print(">>> ")			
+		}		
+		index += len(body.Body)
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func joinRoom(msg []string) {
+
+	if len(msg) <= 1 {
+		fmt.Println("Can't join a room with no name")
+		fmt.Print(">>> ")
+		return
+	}
+
+	if len(msg) > 2 {
+		fmt.Println("Chatroom name must be without space")
+		fmt.Print(">>> ")
+		return
+	}
+
+	roomname := msg[1]
 	url := "http://localhost:3000/users/"+user+"/chatrooms"
 	entry := "roomname="+roomname+"&action=join"
 
@@ -168,15 +231,32 @@ func joinRoom(roomname string) {
 	if err != nil {
 		log.Println(err)
 	}
-	fmt.Println(body.Message)
-	for i:=0; i<len(body.Body); i++ {
-		fmt.Println(body.Body[i])	
-	}	
-	fmt.Print(">>> ")
+
+	if body.Status == "failed" {
+		fmt.Println(body.Message)	
+		fmt.Print(">>> ")
+	} else {
+		go refresh(roomname)
+		fmt.Print(">>> ")
+	}
+
 }
 
-func leaveRoom(roomname string) {
+func leaveRoom(msg []string) {
 
+	if len(msg) <= 1 {
+		fmt.Println("Can't leave a room with no name")
+		fmt.Print(">>> ")
+		return
+	}
+	
+	if len(msg) > 2 {
+		fmt.Println("Chatroom name must be without space")
+		fmt.Print(">>> ")
+		return
+	}
+
+	roomname := msg[1]
 	url := "http://localhost:3000/users/"+user+"/chatrooms"
 	entry := "roomname="+roomname+"&action=leave"
 
@@ -202,10 +282,20 @@ func leaveRoom(roomname string) {
 
 }
 
-func messageRoom(roomname string, message string) {
+func messageRoom(msg []string) {
+
+	if len(msg) <= 2 {
+		fmt.Println("Not enough argument to handle request")
+		fmt.Print(">>> ")
+		return
+	}
+
+	roomname := msg[1]
+	message := strings.Join(msg[2:], " ")
+
 	url := "http://localhost:3000/users/"+user+"/"+roomname+"/messages"
 
-	entry := "message='"+message+"'"
+	entry := "message="+message
 	payload := strings.NewReader(entry)
 
 	req, _ := http.NewRequest("POST", url, payload)
@@ -224,7 +314,7 @@ func messageRoom(roomname string, message string) {
 	if err != nil {
 		log.Println(err)
 	}
-	fmt.Println(body.Body[len(body.Body)-1])
+	// fmt.Println(body.Body[len(body.Body)-1])
 	fmt.Print(">>> ")
 }
 
@@ -261,6 +351,6 @@ func helpmenu() {
 	fmt.Println("leave AbC -> leave chatroom AbC")
 	fmt.Println("message AbC [message] -> send message to chatroom AbC")
 	fmt.Println("logout -> disconnect")
-	fmt.Println("help -> usage instructions")
+	fmt.Println("help -> this menu")
 	fmt.Print(">>> ")
 }
